@@ -539,6 +539,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'answers' not in context.user_data:
         context.user_data['answers'] = {}
 
+    # Блокируем текстовый ввод для вопросов с inline-кнопками
+    if current_question in [1, 2, 5, 8, 9, "3_alt", "education", "age", "current_city"]:
+        await update.message.reply_text("❌ Пожалуйста, используйте кнопки для ответа на этот вопрос.")
+        return
+
     # Текстовые вопросы
     if current_question == 3:  # Должность
         context.user_data['answers'][3] = user_message
