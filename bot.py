@@ -1,8 +1,10 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
+import os
+from dotenv import load_dotenv
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# ВСТАВЬТЕ СЮДА ВАШ ТОКЕН ОТ @BotFather
-BOT_TOKEN = "8085427677:AAH5HrDnsSEBpzMAfI-fJz1eqvX-A7dG6_E"
+load_dotenv()
+BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 # Приветственное сообщение
 WELCOME_MESSAGE = """Уважаемые коллеги! Настоящий опрос проводится среди сотрудников группы компаний ОАО «Савушкин продукт» с целью эффективного планирования карьерного развития, формирования кадрового резерва, а также выявления инициативных и целеустремлённых специалистов, готовых расти и развиваться вместе с компанией, применяя свои знания и навыки на её производственных площадках. Просим вас быть искренними — прежде всего перед самими собой. Опрос займёт всего несколько минут. 
@@ -39,15 +41,15 @@ HELP_TEXT = """❓ **Помощь**
 
 Для возврата в главное меню используйте кнопку 🏠 Главное меню"""
 
-# Списки для чекбоксов
+# Списки для выбора
 CITIES = ["Брест", "Береза", "Барановичи", "Пинск", "Столин", "Орша", "Иваново", 
           "Минск", "Витебск", "Гродно", "Гомель", "Могилёв", "ТФ Полесский"]
 
 REASONS_NO_RESERVE = [
     "Удовлетворён текущей должностью",
-    "Не готов(а) брать на себя ответственность за команду или процессы",
-    "Не уверен(а) в своих силах / компетенциях", 
-    "Психологически не готов(а) к дополнительной ответственности в текущих условиях",
+    "Не готов(а) брать на себя ответственность",
+    "Не уверен(а) в своих силах", 
+    "Психологически не готов(а)",
     "Другое (укажите)"
 ]
 
@@ -60,10 +62,7 @@ EDUCATION_LEVELS = [
 
 AGE_GROUPS = ["18-25", "26-31", "31-35", "36-40", "Больше 41"]
 
-# Клавиатура для Да/Нет вопросов
-YES_NO_KEYBOARD = [["✅ Да", "❌ Нет"]]
-
-# Главное меню
+# Inline-клавиатуры
 def get_main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("📝 Начать опрос", callback_data="start_survey")],
@@ -72,45 +71,87 @@ def get_main_menu_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# Кнопка возврата в главное меню
 def get_back_to_menu_keyboard():
     keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]
     return InlineKeyboardMarkup(keyboard)
 
-# Обработчик команды /start
+def get_yes_no_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("✅ Да", callback_data="yes"),
+         InlineKeyboardButton("❌ Нет", callback_data="no")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_cities_keyboard(selected_cities=None):
+    if selected_cities is None:
+        selected_cities = []
+    
+    keyboard = []
+    for i in range(0, len(CITIES), 3):
+        row = []
+        for city in CITIES[i:i+3]:
+            mark = "✅" if city in selected_cities else "◻️"
+            row.append(InlineKeyboardButton(f"{mark} {city}", callback_data=f"city_{city}"))
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("✅ Завершить выбор", callback_data="finish_cities")])
+    return InlineKeyboardMarkup(keyboard)
+
+def get_reasons_keyboard(selected_reasons=None):
+    if selected_reasons is None:
+        selected_reasons = []
+    
+    keyboard = []
+    for i in range(0, len(REASONS_NO_RESERVE), 2):
+        row = []
+        for reason in REASONS_NO_RESERVE[i:i+2]:
+            mark = "✅" if reason in selected_reasons else "◻️"
+            row.append(InlineKeyboardButton(f"{mark} {reason}", callback_data=f"reason_{reason}"))
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("✅ Завершить выбор", callback_data="finish_reasons")])
+    return InlineKeyboardMarkup(keyboard)
+
+def get_education_keyboard():
+    keyboard = []
+    for i in range(0, len(EDUCATION_LEVELS), 2):
+        row = []
+        for education in EDUCATION_LEVELS[i:i+2]:
+            row.append(InlineKeyboardButton(education, callback_data=f"education_{education}"))
+        keyboard.append(row)
+    return InlineKeyboardMarkup(keyboard)
+
+def get_age_keyboard():
+    keyboard = []
+    for i in range(0, len(AGE_GROUPS), 2):
+        row = []
+        for age in AGE_GROUPS[i:i+2]:
+            row.append(InlineKeyboardButton(age, callback_data=f"age_{age}"))
+        keyboard.append(row)
+    return InlineKeyboardMarkup(keyboard)
+
+def get_current_city_keyboard():
+    keyboard = []
+    for i in range(0, len(CITIES), 3):
+        row = []
+        for city in CITIES[i:i+3]:
+            row.append(InlineKeyboardButton(city, callback_data=f"current_city_{city}"))
+        keyboard.append(row)
+    return InlineKeyboardMarkup(keyboard)
+
+# Обработчики команд
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает команду /start"""
     if update.message:
         await update.message.reply_text(
             "Добро пожаловать в бот опроса кадрового резерва ОАО «Савушкин продукт»!\n\n" + WELCOME_MESSAGE,
             reply_markup=get_main_menu_keyboard()
         )
-    else:
-        await update.callback_query.message.reply_text(
-            "Добро пожаловать в бот опроса кадрового резерва ОАО «Савушкин продукт»!\n\n" + WELCOME_MESSAGE,
-            reply_markup=get_main_menu_keyboard()
-        )
 
-# Обработчик команды /menu
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает команду /menu"""
-    await update.message.reply_text(
-        "🏠 Главное меню:",
-        reply_markup=get_main_menu_keyboard()
-    )
+    await update.message.reply_text("🏠 Главное меню:", reply_markup=get_main_menu_keyboard())
 
-# Обработчик команды /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает команду /help"""
-    await update.message.reply_text(
-        HELP_TEXT,
-        reply_markup=get_back_to_menu_keyboard(),
-        parse_mode='Markdown'
-    )
+    await update.message.reply_text(HELP_TEXT, reply_markup=get_back_to_menu_keyboard(), parse_mode='Markdown')
 
-# Обработчик команды /status
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает команду /status"""
     user_data = context.user_data
     answers = user_data.get('answers', {})
     
@@ -129,360 +170,383 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             status_text += "\n⏳ Опрос в процессе..."
     
-    await update.message.reply_text(
-        status_text,
-        reply_markup=get_back_to_menu_keyboard(),
-        parse_mode='Markdown'
-    )
+    await update.message.reply_text(status_text, reply_markup=get_back_to_menu_keyboard(), parse_mode='Markdown')
 
-# Обработчик inline-кнопок
+# Главный обработчик inline-кнопок
 async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает нажатия inline-кнопок"""
     query = update.callback_query
     await query.answer()
     
+    user_data = context.user_data
+    if 'answers' not in user_data:
+        user_data['answers'] = {}
+    
+    # Навигация
     if query.data == "main_menu":
-        await query.edit_message_text(
-            "🏠 Главное меню:",
-            reply_markup=get_main_menu_keyboard()
-        )
+        await query.edit_message_text("🏠 Главное меню:", reply_markup=get_main_menu_keyboard())
     
     elif query.data == "start_survey":
-        # Показываем приветственное сообщение перед началом опроса
-        await query.edit_message_text(
-            WELCOME_MESSAGE + "\n\n*Для начала опроса ответьте на первый вопрос:*",
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text(WELCOME_MESSAGE + "\n\n*Для начала опроса ответьте на первый вопрос:*", parse_mode='Markdown')
         await ask_first_question(query, context)
     
     elif query.data == "reserve_info":
-        await query.edit_message_text(
-            RESERVE_INFO,
-            reply_markup=get_back_to_menu_keyboard(),
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text(RESERVE_INFO, reply_markup=get_back_to_menu_keyboard(), parse_mode='Markdown')
     
     elif query.data == "help":
+        await query.edit_message_text(HELP_TEXT, reply_markup=get_back_to_menu_keyboard(), parse_mode='Markdown')
+    
+    # Вопрос 1: Сотрудник компании
+    elif query.data in ["yes", "no"]:
+        user_data['answers'][1] = "✅ Да" if query.data == "yes" else "❌ Нет"
+        if query.data == "yes":
+            await ask_second_question(query, context)
+        else:
+            await query.edit_message_text(
+                "К сожалению, данный опрос только для сотрудников компании.",
+                reply_markup=get_back_to_menu_keyboard()
+            )
+            user_data.clear()
+    
+    # Вопрос 2: Кадровый резерв
+    elif query.data in ["yes_2", "no_2"]:
+        user_data['answers'][2] = "✅ Да" if query.data == "yes_2" else "❌ Нет"
+        if query.data == "yes_2":
+            user_data['branch'] = 'yes'
+            await ask_position_question(query, context)
+        else:
+            user_data['branch'] = 'no'
+            await ask_reason_no_reserve_question(query, context)
+    
+    # Вопрос 5: Обучение
+    elif query.data in ["yes_5", "no_5"]:
+        user_data['answers'][5] = "✅ Да" if query.data == "yes_5" else "❌ Нет"
+        await ask_career_obstacles_question(query, context)
+    
+    # Вопрос 8: Ротация
+    elif query.data in ["yes_8", "no_8"]:
+        user_data['answers'][8] = "✅ Да" if query.data == "yes_8" else "❌ Нет"
+        if query.data == "yes_8":
+            await ask_cities_question(query, context)
+        else:
+            await ask_current_city_question(query, context)
+    
+    # Выбор городов для ротации
+    elif query.data.startswith("city_"):
+        city = query.data[5:]
+        selected_cities = user_data.get('selected_cities', [])
+        
+        if city in selected_cities:
+            selected_cities.remove(city)
+        else:
+            selected_cities.append(city)
+        
+        user_data['selected_cities'] = selected_cities
         await query.edit_message_text(
-            HELP_TEXT,
-            reply_markup=get_back_to_menu_keyboard(),
-            parse_mode='Markdown'
+            "Укажите preferred города для ротации (можно выбрать несколько):\n\nВыбрано: " + ", ".join(selected_cities) if selected_cities else "Ничего не выбрано",
+            reply_markup=get_cities_keyboard(selected_cities)
         )
+    
+    elif query.data == "finish_cities":
+        selected_cities = user_data.get('selected_cities', [])
+        if selected_cities:
+            user_data['answers'][9] = ", ".join(selected_cities)
+            await ask_structural_unit_question(query, context)
+        else:
+            await query.answer("❌ Пожалуйста, выберите хотя бы один город.", show_alert=True)
+    
+    # Выбор причин отказа
+    elif query.data.startswith("reason_"):
+        reason = query.data[7:]
+        selected_reasons = user_data.get('selected_reasons', [])
+        
+        if reason in selected_reasons:
+            selected_reasons.remove(reason)
+        else:
+            selected_reasons.append(reason)
+        
+        user_data['selected_reasons'] = selected_reasons
+        
+        if reason == "Другое (укажите)" and reason not in selected_reasons:
+            user_data['other_reason'] = None
+        
+        await query.edit_message_text(
+            "Пожалуйста, укажите причину (можно выбрать несколько):\n\nВыбрано: " + ", ".join(selected_reasons) if selected_reasons else "Ничего не выбрано",
+            reply_markup=get_reasons_keyboard(selected_reasons)
+        )
+    
+    elif query.data == "finish_reasons":
+        selected_reasons = user_data.get('selected_reasons', [])
+        if selected_reasons:
+            user_data['answers'][3] = ", ".join(selected_reasons)
+            
+            if "Другое (укажите)" in selected_reasons and not user_data.get('other_reason'):
+                await ask_other_reason_question(query, context)
+            else:
+                if user_data.get('other_reason'):
+                    user_data['answers'][3] += f" ({user_data['other_reason']})"
+                await ask_career_obstacles_alt_question(query, context)
+        else:
+            await query.answer("❌ Пожалуйста, выберите хотя бы одну причину.", show_alert=True)
+    
+    # Образование
+    elif query.data.startswith("education_"):
+        education = query.data[10:]
+        user_data['answers']['education'] = education
+        
+        if education == "Обучаюсь":
+            await ask_education_institution_question(query, context)
+        else:
+            await ask_age_question(query, context)
+    
+    # Возраст
+    elif query.data.startswith("age_"):
+        age = query.data[4:]
+        user_data['answers']['age'] = age
+        await ask_fio_question(query, context)
+    
+    # Текущий город
+    elif query.data.startswith("current_city_"):
+        city = query.data[13:]
+        user_data['answers']['current_city'] = city
+        await ask_current_position_question(query, context)
 
-# Функция для первого вопроса опроса
+# Функции вопросов (inline версии)
 async def ask_first_question(update, context: ContextTypes.DEFAULT_TYPE):
-    """Задает первый вопрос: проверка сотрудника"""
     question = "Являетесь ли вы сотрудником ОАО «Савушкин продукт»?"
     
     if hasattr(update, 'callback_query'):
-        # Если пришло из inline-кнопки, используем существующее сообщение
-        message = update.callback_query.message
-        reply_markup = ReplyKeyboardMarkup(YES_NO_KEYBOARD, resize_keyboard=True)
-        await message.reply_text(question, reply_markup=reply_markup)
+        await update.callback_query.edit_message_text(question, reply_markup=get_yes_no_keyboard())
     else:
-        # Если пришло из команды, используем update.message
-        reply_markup = ReplyKeyboardMarkup(YES_NO_KEYBOARD, resize_keyboard=True)
-        await update.message.reply_text(question, reply_markup=reply_markup)
+        await update.message.reply_text(question, reply_markup=get_yes_no_keyboard())
     
     context.user_data['current_question'] = 1
 
-# Функция для второго вопроса опроса
-async def ask_second_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Задает второй вопрос: о кадровом резерве"""
+async def ask_second_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Хотели бы Вы, чтобы Ваша кандидатура была рассмотрена для включения в кадровый резерв?"
     
-    reply_markup = ReplyKeyboardMarkup(YES_NO_KEYBOARD, resize_keyboard=True)
-    await update.message.reply_text(question, reply_markup=reply_markup)
+    keyboard = [
+        [InlineKeyboardButton("✅ Да", callback_data="yes_2"),
+         InlineKeyboardButton("❌ Нет", callback_data="no_2")]
+    ]
+    
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question, reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text(question, reply_markup=InlineKeyboardMarkup(keyboard))
+    
     context.user_data['current_question'] = 2
 
-# ВЕТКА ДА - пользователь хочет в кадровый резерв
-async def ask_position_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Какую должность рассматриваете"""
+async def ask_position_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Какую должность Вы рассматриваете для возможного назначения в рамках кадрового резерва?"
     
-    await update.message.reply_text(question, reply_markup=ReplyKeyboardRemove())
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question)
+    else:
+        await update.message.reply_text(question)
+    
     context.user_data['current_question'] = 3
 
-async def ask_initiatives_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Какие инициативы или программы"""
+async def ask_initiatives_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Какие инициативы или программы Вы хотели бы видеть для развития сотрудников?"
     
-    await update.message.reply_text(question)
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question)
+    else:
+        await update.message.reply_text(question)
+    
     context.user_data['current_question'] = 4
 
-async def ask_training_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Готовы ли пройти обучение"""
+async def ask_training_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Готовы ли Вы пройти обучение или стажировку для включения в кадровый резерв?"
     
-    reply_markup = ReplyKeyboardMarkup(YES_NO_KEYBOARD, resize_keyboard=True)
-    await update.message.reply_text(question, reply_markup=reply_markup)
+    keyboard = [
+        [InlineKeyboardButton("✅ Да", callback_data="yes_5"),
+         InlineKeyboardButton("❌ Нет", callback_data="no_5")]
+    ]
+    
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question, reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text(question, reply_markup=InlineKeyboardMarkup(keyboard))
+    
     context.user_data['current_question'] = 5
 
-async def ask_career_obstacles_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Что мешает карьерному росту"""
+async def ask_career_obstacles_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Что, по Вашему мнению, мешает карьерному росту внутри компании?"
     
-    await update.message.reply_text(question, reply_markup=ReplyKeyboardRemove())
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question)
+    else:
+        await update.message.reply_text(question)
+    
     context.user_data['current_question'] = 6
 
-async def ask_improvements_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Предложения по улучшению"""
+async def ask_improvements_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Есть ли у Вас предложения по улучшению работы Вашего филиала или компании в целом?"
     
-    await update.message.reply_text(question)
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question)
+    else:
+        await update.message.reply_text(question)
+    
     context.user_data['current_question'] = 7
 
-async def ask_rotation_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Готовы к ротации"""
+async def ask_rotation_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Готовы ли Вы к ротации или переводу в другое подразделение (филиал)?"
     
-    reply_markup = ReplyKeyboardMarkup(YES_NO_KEYBOARD, resize_keyboard=True)
-    await update.message.reply_text(question, reply_markup=reply_markup)
+    keyboard = [
+        [InlineKeyboardButton("✅ Да", callback_data="yes_8"),
+         InlineKeyboardButton("❌ Нет", callback_data="no_8")]
+    ]
+    
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question, reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text(question, reply_markup=InlineKeyboardMarkup(keyboard))
+    
     context.user_data['current_question'] = 8
 
-async def ask_cities_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Выбор городов для ротации"""
+async def ask_cities_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Укажите preferred города для ротации (можно выбрать несколько):"
     
-    # Создаем клавиатуру с городами (по 3 в строке для компактности)
-    keyboard = []
-    for i in range(0, len(CITIES), 3):
-        keyboard.append(CITIES[i:i+3])
-    keyboard.append(["✅ Завершить выбор"])
+    context.user_data['selected_cities'] = []
     
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question, reply_markup=get_cities_keyboard())
+    else:
+        await update.message.reply_text(question, reply_markup=get_cities_keyboard())
     
-    await update.message.reply_text(
-        question + "\n\nВыберите города по одному, затем нажмите '✅ Завершить выбор'",
-        reply_markup=reply_markup
-    )
     context.user_data['current_question'] = 9
-    context.user_data['selected_cities'] = []  # Инициализируем список выбранных городов
 
-async def ask_structural_unit_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Структурное подразделение"""
+async def ask_structural_unit_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Укажите структурное подразделение:"
     
-    await update.message.reply_text(question, reply_markup=ReplyKeyboardRemove())
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question)
+    else:
+        await update.message.reply_text(question)
+    
     context.user_data['current_question'] = 10
 
-# ВЕТКА НЕТ - пользователь не хочет в кадровый резерв
-async def ask_reason_no_reserve_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Причина отказа от кадрового резерва (множественный выбор как города)"""
+async def ask_reason_no_reserve_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Пожалуйста, укажите причину, по которой Вы не готовы рассматривать включение в кадровый резерв:"
     
-    # Инициализируем список выбранных причин
     context.user_data['selected_reasons'] = []
+    context.user_data['other_reason'] = None
     
-    # Создаем клавиатуру с причинами (по 2 в строке для компактности)
-    keyboard = []
-    for i in range(0, len(REASONS_NO_RESERVE), 2):
-        row = REASONS_NO_RESERVE[i:i+2]
-        keyboard.append(row)
-    keyboard.append(["✅ Завершить выбор"])
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question, reply_markup=get_reasons_keyboard())
+    else:
+        await update.message.reply_text(question, reply_markup=get_reasons_keyboard())
     
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    
-    await update.message.reply_text(
-        question + "\n\nВыберите причины по одной, затем нажмите '✅ Завершить выбор'",
-        reply_markup=reply_markup
-    )
     context.user_data['current_question'] = "3_alt"
 
-async def ask_other_reason_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Уточнение причины 'Другое'"""
+async def ask_other_reason_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Пожалуйста, укажите Вашу причину:"
     
-    await update.message.reply_text(
-        question,
-        reply_markup=ReplyKeyboardRemove()
-    )
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question)
+    else:
+        await update.message.reply_text(question)
+    
     context.user_data['current_question'] = "other_reason"
 
-async def ask_career_obstacles_alt_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Что мешает карьерному росту (альтернативная ветка)"""
+async def ask_career_obstacles_alt_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Что, по Вашему мнению, мешает карьерному росту внутри компании?"
     
-    await update.message.reply_text(question, reply_markup=ReplyKeyboardRemove())
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question)
+    else:
+        await update.message.reply_text(question)
+    
     context.user_data['current_question'] = "4_alt"
 
-async def ask_improvements_alt_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Предложения по улучшению (альтернативная ветка)"""
+async def ask_improvements_alt_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Есть ли у Вас предложения по улучшению работы Вашего филиала или компании в целом?"
     
-    await update.message.reply_text(question)
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question)
+    else:
+        await update.message.reply_text(question)
+    
     context.user_data['current_question'] = "5_alt"
 
-# ОБЩИЕ ВОПРОСЫ (для обеих веток)
-async def ask_current_city_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: ПП/ТФ, в котором работаете"""
+async def ask_current_city_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "ПП/ТФ, в котором вы работаете:"
     
-    keyboard = []
-    for i in range(0, len(CITIES), 3):
-        keyboard.append(CITIES[i:i+3])
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question, reply_markup=get_current_city_keyboard())
+    else:
+        await update.message.reply_text(question, reply_markup=get_current_city_keyboard())
     
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    
-    await update.message.reply_text(question, reply_markup=reply_markup)
     context.user_data['current_question'] = "current_city"
 
-async def ask_current_position_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Текущая должность"""
+async def ask_current_position_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Ваша профессия/должность, которую Вы сейчас занимаете (укажите):"
     
-    await update.message.reply_text(question, reply_markup=ReplyKeyboardRemove())
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question)
+    else:
+        await update.message.reply_text(question)
+    
     context.user_data['current_question'] = "current_position"
 
-async def ask_education_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Образование"""
+async def ask_education_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Ваше образование:"
     
-    # Распределяем по 2 в ряд
-    keyboard = []
-    for i in range(0, len(EDUCATION_LEVELS), 2):
-        row = EDUCATION_LEVELS[i:i+2]
-        keyboard.append(row)
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question, reply_markup=get_education_keyboard())
+    else:
+        await update.message.reply_text(question, reply_markup=get_education_keyboard())
     
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    
-    await update.message.reply_text(question, reply_markup=reply_markup)
     context.user_data['current_question'] = "education"
 
-async def ask_education_institution_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Учебное заведение (если выбрано 'Обучаюсь')"""
+async def ask_education_institution_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Укажите учебное заведение, в котором обучаетесь:"
     
-    await update.message.reply_text(question)
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question)
+    else:
+        await update.message.reply_text(question)
+    
     context.user_data['current_question'] = "education_institution"
 
-async def ask_age_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: Возраст"""
+async def ask_age_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Ваш возраст:"
     
-    # Распределяем по 2 в ряд
-    keyboard = []
-    for i in range(0, len(AGE_GROUPS), 2):
-        row = AGE_GROUPS[i:i+2]
-        keyboard.append(row)
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question, reply_markup=get_age_keyboard())
+    else:
+        await update.message.reply_text(question, reply_markup=get_age_keyboard())
     
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    
-    await update.message.reply_text(question, reply_markup=reply_markup)
     context.user_data['current_question'] = "age"
 
-async def ask_fio_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вопрос: ФИО"""
+async def ask_fio_question(update, context: ContextTypes.DEFAULT_TYPE):
     question = "Укажите ФИО:"
     
-    await update.message.reply_text(question, reply_markup=ReplyKeyboardRemove())
+    if hasattr(update, 'callback_query'):
+        await update.callback_query.edit_message_text(question)
+    else:
+        await update.message.reply_text(question)
+    
     context.user_data['current_question'] = "fio"
 
-# Функция для валидации ФИО
-def validate_fio(fio):
-    """Проверяет корректность ФИО"""
-    # Убираем лишние пробелы
-    fio = ' '.join(fio.split())
-    
-    # Проверяем длину (минимум 5 символов, максимум 100)
-    if len(fio) < 5 or len(fio) > 100:
-        return False, "ФИО должно содержать от 5 до 100 символов"
-    
-    # Проверяем, что есть хотя бы 2 слова (Имя и Фамилия)
-    parts = fio.split()
-    if len(parts) < 2:
-        return False, "Укажите как минимум имя и фамилию"
-    
-    # Проверяем, что все символы кириллические, дефисы или пробелы
-    for char in fio:
-        if not (char.isalpha() or char in ' -'):
-            return False, "ФИО может содержать только буквы, дефисы и пробелы"
-    
-    return True, fio
-
-# Функция для завершения опроса
-async def finish_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Завершает опрос и благодарит пользователя"""
-    
-    # Сохраняем результаты
-    user_id = update.message.from_user.id
-    answers = context.user_data.get('answers', {})
-    
-    # Формируем сообщение с результатами
-    result_message = "✅ Спасибо за участие в опросе!\n\nВаши ответы сохранены.\n\nОпрос завершен!"
-    
-    await update.message.reply_text(
-        result_message,
-        reply_markup=get_back_to_menu_keyboard()
-    )
-    
-    # Выводим ответы в консоль для отладки
-    print(f"Ответы пользователя {user_id}:")
-    for question_num, answer in answers.items():
-        print(f"Вопрос {question_num}: {answer}")
-    print("---")
-    
-    # Очищаем данные пользователя
-    context.user_data.clear()
-
-# Обработчик текстовых сообщений (кнопок и ответов)
+# Обработчик текстовых сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает нажатия кнопок и текстовые ответы"""
     user_message = update.message.text
     current_question = context.user_data.get('current_question', 0)
     
-    # Инициализируем словарь ответов если его нет
     if 'answers' not in context.user_data:
         context.user_data['answers'] = {}
 
-    # Вопрос 1: Проверка сотрудника
-    if current_question == 1:
-        if user_message in ["✅ Да", "❌ Нет"]:
-            context.user_data['answers'][1] = user_message
-            if user_message == "✅ Да":
-                await ask_second_question(update, context)
-            else:
-                # Убираем клавиатуру и предлагаем вернуться в меню
-                await update.message.reply_text(
-                    "К сожалению, данный опрос только для сотрудников компании.",
-                    reply_markup=ReplyKeyboardRemove()
-                )
-                await update.message.reply_text(
-                    "Вы можете вернуться в главное меню:",
-                    reply_markup=get_back_to_menu_keyboard()
-                )
-                context.user_data.clear()
-        else:
-            await update.message.reply_text("Пожалуйста, выберите вариант ответа с помощью кнопок.")
-
-    # Вопрос 2: Хочет ли в кадровый резерв
-    elif current_question == 2:
-        if user_message in ["✅ Да", "❌ Нет"]:
-            context.user_data['answers'][2] = user_message
-            if user_message == "✅ Да":
-                context.user_data['branch'] = 'yes'
-                await ask_position_question(update, context)
-            else:
-                context.user_data['branch'] = 'no'
-                await ask_reason_no_reserve_question(update, context)
-        else:
-            await update.message.reply_text("Пожалуйста, выберите вариант ответа с помощью кнопок.")
-
-    # ВЕТКА ДА
-    elif current_question == 3:  # Должность
+    # Текстовые вопросы
+    if current_question == 3:  # Должность
         context.user_data['answers'][3] = user_message
         await ask_initiatives_question(update, context)
 
     elif current_question == 4:  # Инициативы
         context.user_data['answers'][4] = user_message
         await ask_training_question(update, context)
-
-    elif current_question == 5:  # Обучение
-        if user_message in ["✅ Да", "❌ Нет"]:
-            context.user_data['answers'][5] = user_message
-            await ask_career_obstacles_question(update, context)
-        else:
-            await update.message.reply_text("Пожалуйста, выберите вариант ответа с помощью кнопок.")
 
     elif current_question == 6:  # Препятствия карьерному росту
         context.user_data['answers'][6] = user_message
@@ -492,74 +556,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['answers'][7] = user_message
         await ask_rotation_question(update, context)
 
-    elif current_question == 8:  # Ротация
-        if user_message in ["✅ Да", "❌ Нет"]:
-            context.user_data['answers'][8] = user_message
-            if user_message == "✅ Да":
-                await ask_cities_question(update, context)
-            else:
-                await ask_current_city_question(update, context)
-        else:
-            await update.message.reply_text("Пожалуйста, выберите вариант ответа с помощью кнопок.")
-
-    elif current_question == 9:  # Выбор городов для ротации
-        if user_message == "✅ Завершить выбор":
-            if context.user_data['selected_cities']:
-                context.user_data['answers'][9] = ", ".join(context.user_data['selected_cities'])
-                await ask_structural_unit_question(update, context)
-            else:
-                await update.message.reply_text("Пожалуйста, выберите хотя бы один город.")
-        elif user_message in CITIES:
-            if user_message not in context.user_data['selected_cities']:
-                context.user_data['selected_cities'].append(user_message)
-                await update.message.reply_text(f"Добавлен: {user_message}\nВыберите еще или нажмите '✅ Завершить выбор'")
-            else:
-                await update.message.reply_text("Этот город уже выбран.")
-
     elif current_question == 10:  # Структурное подразделение
         context.user_data['answers'][10] = user_message
         await ask_current_city_question(update, context)
 
-    # ВЕТКА НЕТ
-    elif current_question == "3_alt":  # Причина отказа (множественный выбор как города)
-        if user_message == "✅ Завершить выбор":
-            if context.user_data['selected_reasons']:
-                # Проверяем, выбрано ли "Другое"
-                if "Другое (укажите)" in context.user_data['selected_reasons']:
-                    # Если выбрано "Другое", спрашиваем уточнение
-                    await ask_other_reason_question(update, context)
-                else:
-                    # Сохраняем выбранные причины и переходим дальше
-                    context.user_data['answers'][3] = ", ".join(context.user_data['selected_reasons'])
-                    await ask_career_obstacles_alt_question(update, context)
-            else:
-                await update.message.reply_text("❌ Пожалуйста, выберите хотя бы одну причину.")
-        
-        elif user_message in REASONS_NO_RESERVE:
-            if user_message not in context.user_data['selected_reasons']:
-                # Добавляем причину
-                context.user_data['selected_reasons'].append(user_message)
-                selected_count = len(context.user_data['selected_reasons'])
-                await update.message.reply_text(f"✅ Добавлена причина: {user_message}\n\nВыбрано причин: {selected_count}\nВыберите еще или нажмите '✅ Завершить выбор'")
-            else:
-                # Убираем причину
-                context.user_data['selected_reasons'].remove(user_message)
-                selected_count = len(context.user_data['selected_reasons'])
-                await update.message.reply_text(f"❌ Убрана причина: {user_message}\n\nВыбрано причин: {selected_count}\nВыберите еще или нажмите '✅ Завершить выбор'")
-
-    elif current_question == "other_reason":  # Обработка текста для "Другое"
-        if user_message.strip():
-            context.user_data['other_reason'] = user_message.strip()
-            # Обновляем текст "Другое" с уточнением
-            if "Другое (укажите)" in context.user_data['selected_reasons']:
-                context.user_data['selected_reasons'].remove("Другое (укажите)")
-                context.user_data['selected_reasons'].append(f"Другое: {user_message.strip()}")
-            
-            # Сохраняем выбранные причины и переходим дальше
-            context.user_data['answers'][3] = ", ".join(context.user_data['selected_reasons'])
-            await ask_career_obstacles_alt_question(update, context)
-        else:
-            await update.message.reply_text("❌ Пожалуйста, укажите причину:")
     elif current_question == "4_alt":  # Препятствия карьерному росту (альт)
         context.user_data['answers'][4] = user_message
         await ask_improvements_alt_question(update, context)
@@ -568,58 +568,69 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['answers'][5] = user_message
         await ask_current_city_question(update, context)
 
-    # ОБЩИЕ ВОПРОСЫ
-    elif current_question == "current_city":
-        context.user_data['answers']['current_city'] = user_message
-        await ask_current_position_question(update, context)
-
-    elif current_question == "current_position":
+    elif current_question == "current_position":  # Текущая должность
         context.user_data['answers']['current_position'] = user_message
         await ask_education_question(update, context)
 
-    elif current_question == "education":
-        if user_message in EDUCATION_LEVELS:
-            context.user_data['answers']['education'] = user_message
-            if user_message == "Обучаюсь":
-                # Убираем клавиатуру сразу после выбора "Обучаюсь"
-                await update.message.reply_text(
-                    "Вы выбрали: Обучаюсь",
-                    reply_markup=ReplyKeyboardRemove()
-                )
-                await ask_education_institution_question(update, context)
-            else:
-                await ask_age_question(update, context)
-        else:
-            await update.message.reply_text("Пожалуйста, выберите вариант ответа с помощью кнопок.")
-
-    elif current_question == "education_institution":
+    elif current_question == "education_institution":  # Учебное заведение
         context.user_data['answers']['education_institution'] = user_message
         await ask_age_question(update, context)
 
-    elif current_question == "age":
-        if user_message in AGE_GROUPS:
-            context.user_data['answers']['age'] = user_message
-            await ask_fio_question(update, context)
+    elif current_question == "other_reason":  # Другая причина
+        if user_message.strip():
+            context.user_data['other_reason'] = user_message.strip()
+            if "Другое (укажите)" in context.user_data.get('selected_reasons', []):
+                context.user_data['selected_reasons'].remove("Другое (укажите)")
+                context.user_data['selected_reasons'].append(f"Другое: {user_message.strip()}")
+            
+            context.user_data['answers'][3] = ", ".join(context.user_data['selected_reasons'])
+            await ask_career_obstacles_alt_question(update, context)
         else:
-            await update.message.reply_text("Пожалуйста, выберите вариант ответа с помощью кнопок.")
+            await update.message.reply_text("❌ Пожалуйста, укажите причину:")
 
-    elif current_question == "fio":
-        # Валидация ФИО
+    elif current_question == "fio":  # ФИО
         is_valid, result = validate_fio(user_message)
         if is_valid:
             context.user_data['answers']['fio'] = result
             await finish_survey(update, context)
         else:
-            await update.message.reply_text(
-                f"❌ {result}\n\nПожалуйста, укажите корректное ФИО (например: Иванов Иван Иванович):"
-            )
+            await update.message.reply_text(f"❌ {result}\n\nПожалуйста, укажите корректное ФИО:")
 
     else:
-        # Если сообщение не обработано, показываем главное меню
-        await update.message.reply_text(
-            "Выберите действие:",
-            reply_markup=get_main_menu_keyboard()
-        )
+        await update.message.reply_text("Выберите действие:", reply_markup=get_main_menu_keyboard())
+
+# Функция для валидации ФИО
+def validate_fio(fio):
+    fio = ' '.join(fio.split())
+    
+    if len(fio) < 5 or len(fio) > 100:
+        return False, "ФИО должно содержать от 5 до 100 символов"
+    
+    parts = fio.split()
+    if len(parts) < 2:
+        return False, "Укажите как минимум имя и фамилию"
+    
+    for char in fio:
+        if not (char.isalpha() or char in ' -'):
+            return False, "ФИО может содержать только буквы, дефисы и пробелы"
+    
+    return True, fio
+
+# Завершение опроса
+async def finish_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    answers = context.user_data.get('answers', {})
+    
+    result_message = "✅ Спасибо за участие в опросе!\n\nВаши ответы сохранены.\n\nОпрос завершен!"
+    
+    await update.message.reply_text(result_message, reply_markup=get_back_to_menu_keyboard())
+    
+    print(f"Ответы пользователя {user_id}:")
+    for question_num, answer in answers.items():
+        print(f"Вопрос {question_num}: {answer}")
+    print("---")
+    
+    context.user_data.clear()
 
 # Обработчик ошибок
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -630,13 +641,11 @@ def main():
     print("Запускаю бота опроса...")
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Обработчики команд
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("menu", menu_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("status", status_command))
     
-    # Обработчики кнопок и сообщений
     application.add_handler(CallbackQueryHandler(handle_button_click))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
