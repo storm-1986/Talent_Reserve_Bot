@@ -7,8 +7,9 @@ load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 # Приветственное сообщение
-WELCOME_MESSAGE = """Уважаемые коллеги! Настоящий опрос проводится среди сотрудников группы компаний ОАО «Савушкин продукт» с целью эффективного планирования карьерного развития, формирования кадрового резерва, а также выявления инициативных и целеустремлённых специалистов, готовых расти и развиваться вместе с компанией, применяя свои знания и навыки на её производственных площадках. Просим вас быть искренними — прежде всего перед самими собой. Опрос займёт всего несколько минут. 
-Благодарим за ваше участие и уделённое время!"""
+WELCOME_MESSAGE = """*Уважаемые коллеги!* Настоящий опрос проводится среди сотрудников группы компаний ОАО «Савушкин продукт» с целью эффективного планирования карьерного развития, формирования кадрового резерва, а также выявления инициативных и целеустремлённых специалистов, готовых расти и развиваться вместе с компанией, применяя свои знания и навыки на её производственных площадках.
+Просим вас быть искренними — прежде всего перед самими собой. Опрос займёт всего несколько минут.
+*Благодарим за ваше участие и уделённое время!*"""
 
 # Информация о кадровом резерве
 RESERVE_INFO = """📊 **О кадровом резерве**
@@ -119,7 +120,7 @@ def get_education_keyboard():
 
 def get_age_keyboard():
     keyboard = []
-    ages_per_row = 2  # 2 возраста в строке
+    ages_per_row = 3  # 3 возраста в строке
     
     for i in range(0, len(AGE_GROUPS), ages_per_row):
         row = []
@@ -146,7 +147,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text(
             "Добро пожаловать в бот опроса кадрового резерва ОАО «Савушкин продукт»!\n\n" + WELCOME_MESSAGE,
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode='Markdown'
         )
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -205,10 +207,8 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Вопрос 1: Сотрудник компании
     elif query.data in ["yes", "no"]:
         user_data['answers']['is_employee'] = "✅ Да" if query.data == "yes" else "❌ Нет"
-        await query.edit_message_text(
-            "Являетесь ли вы сотрудником ОАО «Савушкин продукт»?\n\n" +
-            f"Вы ответили: {'✅ Да' if query.data == 'yes' else '❌ Нет'}"
-        )
+        await query.edit_message_text("Являетесь ли вы сотрудником ОАО «Савушкин продукт»?")
+        await query.message.reply_text("✅ Да" if query.data == "yes" else "❌ Нет")
         if query.data == "yes":
             await ask_second_question(query, context)
         else:
@@ -221,10 +221,8 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Вопрос 2: Кадровый резерв
     elif query.data in ["yes_2", "no_2"]:
         user_data['answers']['want_reserve'] = "✅ Да" if query.data == "yes_2" else "❌ Нет"
-        await query.edit_message_text(
-            "Хотели бы Вы, чтобы Ваша кандидатура была рассмотрена для включения в кадровый резерв?\n\n" +
-            f"Вы ответили: {'✅ Да' if query.data == 'yes_2' else '❌ Нет'}"
-        )
+        await query.edit_message_text("Хотели бы Вы, чтобы Ваша кандидатура была рассмотрена для включения в кадровый резерв?")
+        await query.message.reply_text("✅ Да" if query.data == "yes_2" else "❌ Нет")
         if query.data == "yes_2":
             user_data['branch'] = 'yes'
             await ask_position_question(query, context)
@@ -235,19 +233,15 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Вопрос 5: Обучение
     elif query.data in ["yes_5", "no_5"]:
         user_data['answers']['ready_training'] = "✅ Да" if query.data == "yes_5" else "❌ Нет"
-        await query.edit_message_text(
-            "Готовы ли Вы пройти обучение или стажировку для включения в кадровый резерв?\n\n" +
-            f"Вы ответили: {'✅ Да' if query.data == 'yes_5' else '❌ Нет'}"
-        )
+        await query.edit_message_text("Готовы ли Вы пройти обучение или стажировку для включения в кадровый резерв?")
+        await query.message.reply_text("✅ Да" if query.data == "yes_5" else "❌ Нет")
         await ask_career_obstacles_question(query, context)
 
     # Вопрос 8: Ротация
     elif query.data in ["yes_8", "no_8"]:
         user_data['answers']['ready_rotation'] = "✅ Да" if query.data == "yes_8" else "❌ Нет"
-        await query.edit_message_text(
-            "Готовы ли Вы к ротации или переводу в другое подразделение (филиал)?\n\n" +
-            f"Вы ответили: {'✅ Да' if query.data == 'yes_8' else '❌ Нет'}"
-        )
+        await query.edit_message_text("Готовы ли Вы к ротации или переводу в другое подразделение (филиал)?")
+        await query.message.reply_text("✅ Да" if query.data == "yes_8" else "❌ Нет")
         if query.data == "yes_8":
             await ask_cities_question(query, context)
         else:
@@ -273,11 +267,9 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         selected_cities = user_data.get('selected_cities', [])
         if selected_cities:
             user_data['answers']['preferred_cities'] = ", ".join(selected_cities)
-            # Показываем финальный результат без кнопок
-            await query.edit_message_text(
-                "Укажите предпочтительные города для ротации (можно выбрать несколько):\n\n" +
-                f"Вы выбрали: {', '.join(selected_cities)}"
-            )
+            await query.edit_message_text("Укажите предпочтительные города для ротации (можно выбрать несколько):")
+            cities_text = "\n".join([f"✅ {city}" for city in selected_cities])
+            await query.message.reply_text(cities_text)
             await ask_structural_unit_question(query, context)
         else:
             await query.answer("❌ Пожалуйста, выберите хотя бы один город.", show_alert=True)
@@ -310,21 +302,19 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         if selected_reasons:
             user_data['answers']['reasons_not_joining'] = ", ".join(selected_reasons)
             
-            # Показываем финальный результат без кнопок
-            final_reasons = user_data['answers']['reasons_not_joining']
-            if user_data.get('other_reason'):
-                final_reasons += f" ({user_data['other_reason']})"
+            await query.edit_message_text("Пожалуйста, укажите причину, по которой Вы не готовы рассматривать включение в кадровый резерв:")
+            reasons_text = "\n".join([f"✅ {reason}" for reason in selected_reasons])
             
-            await query.edit_message_text(
-                "Пожалуйста, укажите причину, по которой Вы не готовы рассматривать включение в кадровый резерв:\n\n" +
-                f"Вы выбрали: {final_reasons}"
-            )
+            # Если есть "другая" причина, добавляем её
+            if user_data.get('other_reason'):
+                reasons_text += f"\n✅ Другое: {user_data['other_reason']}"
+                user_data['answers']['reasons_not_joining'] += f" ({user_data['other_reason']})"
+            
+            await query.message.reply_text(reasons_text)
             
             if "Другое (укажите)" in selected_reasons and not user_data.get('other_reason'):
                 await ask_other_reason_question(query, context)
             else:
-                if user_data.get('other_reason'):
-                    user_data['answers']['reasons_not_joining'] += f" ({user_data['other_reason']})"
                 await ask_career_obstacles_alt_question(query, context)
         else:
             await query.answer("❌ Пожалуйста, выберите хотя бы одну причину.", show_alert=True)
@@ -334,11 +324,8 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         education = query.data[10:]
         user_data['answers']['education'] = education
         
-        # Показываем выбранный ответ без кнопок
-        await query.edit_message_text(
-            "Ваше образование:\n\n" +
-            f"Вы выбрали: {education}"
-        )
+        await query.edit_message_text("Ваше образование:")
+        await query.message.reply_text(f"✅ {education}")
         
         if education == "Обучаюсь":
             await ask_education_institution_question(query, context)
@@ -350,11 +337,8 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         age = query.data[4:]
         user_data['answers']['age'] = age
         
-        # Показываем выбранный ответ без кнопок
-        await query.edit_message_text(
-            "Ваш возраст:\n\n" +
-            f"Вы выбрали: {age}"
-        )
+        await query.edit_message_text("Ваш возраст:")
+        await query.message.reply_text(f"✅ {age}")
         
         await ask_fio_question(query, context)
     
@@ -363,17 +347,14 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         city = query.data[13:]
         user_data['answers']['current_city'] = city
         
-        # Показываем выбранный ответ без кнопок
-        await query.edit_message_text(
-            "ПП/ТФ, в котором вы работаете:\n\n" +
-            f"Вы выбрали: {city}"
-        )
+        await query.edit_message_text("ПП/ТФ, в котором вы работаете:")
+        await query.message.reply_text(f"✅ {city}")
         
         await ask_current_position_question(query, context)
 
 # Функции вопросов
 async def ask_first_question(update, context: ContextTypes.DEFAULT_TYPE):
-    question = "Являетесь ли вы сотрудником ОАО «Савушкин продукт»?"
+    question = "Вы сотрудник ОАО «Савушкин продукт»?"
     
     if hasattr(update, 'message') and update.message:
         await update.message.reply_text(question, reply_markup=get_yes_no_keyboard())
