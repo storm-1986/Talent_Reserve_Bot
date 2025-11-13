@@ -119,8 +119,14 @@ def get_education_keyboard():
 
 def get_age_keyboard():
     keyboard = []
-    for age in AGE_GROUPS:
-        keyboard.append([InlineKeyboardButton(age, callback_data=f"age_{age}")])
+    ages_per_row = 2  # 2 возраста в строке
+    
+    for i in range(0, len(AGE_GROUPS), ages_per_row):
+        row = []
+        for age in AGE_GROUPS[i:i + ages_per_row]:
+            row.append(InlineKeyboardButton(age, callback_data=f"age_{age}"))
+        keyboard.append(row)
+    
     return InlineKeyboardMarkup(keyboard)
 
 def get_current_city_keyboard():
@@ -173,16 +179,6 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     
     user_data = context.user_data
-    current_question = user_data.get('current_question', 0)
-    
-    # Защита от повторных нажатий
-    if query.data in ["yes", "no"] and current_question != 1:
-        await query.answer("❌ Этот вопрос уже пройден", show_alert=True)
-        return
-    
-    if query.data in ["yes_2", "no_2"] and current_question != 2:
-        await query.answer("❌ Этот вопрос уже пройден", show_alert=True)
-        return
     
     if 'answers' not in user_data:
         user_data['answers'] = {}
@@ -209,10 +205,14 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Вопрос 1: Сотрудник компании
     elif query.data in ["yes", "no"]:
         user_data['answers']['is_employee'] = "✅ Да" if query.data == "yes" else "❌ Нет"
+        await query.edit_message_text(
+            "Являетесь ли вы сотрудником ОАО «Савушкин продукт»?\n\n" +
+            f"Вы ответили: {'✅ Да' if query.data == 'yes' else '❌ Нет'}"
+        )
         if query.data == "yes":
             await ask_second_question(query, context)
         else:
-            await query.edit_message_text(
+            await query.message.reply_text(
                 "К сожалению, данный опрос только для сотрудников компании.",
                 reply_markup=get_back_to_menu_keyboard()
             )
@@ -221,21 +221,33 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Вопрос 2: Кадровый резерв
     elif query.data in ["yes_2", "no_2"]:
         user_data['answers']['want_reserve'] = "✅ Да" if query.data == "yes_2" else "❌ Нет"
+        await query.edit_message_text(
+            "Хотели бы Вы, чтобы Ваша кандидатура была рассмотрена для включения в кадровый резерв?\n\n" +
+            f"Вы ответили: {'✅ Да' if query.data == 'yes_2' else '❌ Нет'}"
+        )
         if query.data == "yes_2":
             user_data['branch'] = 'yes'
             await ask_position_question(query, context)
         else:
             user_data['branch'] = 'no'
             await ask_reason_no_reserve_question(query, context)
-    
+
     # Вопрос 5: Обучение
     elif query.data in ["yes_5", "no_5"]:
         user_data['answers']['ready_training'] = "✅ Да" if query.data == "yes_5" else "❌ Нет"
+        await query.edit_message_text(
+            "Готовы ли Вы пройти обучение или стажировку для включения в кадровый резерв?\n\n" +
+            f"Вы ответили: {'✅ Да' if query.data == 'yes_5' else '❌ Нет'}"
+        )
         await ask_career_obstacles_question(query, context)
-    
+
     # Вопрос 8: Ротация
     elif query.data in ["yes_8", "no_8"]:
         user_data['answers']['ready_rotation'] = "✅ Да" if query.data == "yes_8" else "❌ Нет"
+        await query.edit_message_text(
+            "Готовы ли Вы к ротации или переводу в другое подразделение (филиал)?\n\n" +
+            f"Вы ответили: {'✅ Да' if query.data == 'yes_8' else '❌ Нет'}"
+        )
         if query.data == "yes_8":
             await ask_cities_question(query, context)
         else:
@@ -261,6 +273,11 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         selected_cities = user_data.get('selected_cities', [])
         if selected_cities:
             user_data['answers']['preferred_cities'] = ", ".join(selected_cities)
+            # Показываем финальный результат без кнопок
+            await query.edit_message_text(
+                "Укажите предпочтительные города для ротации (можно выбрать несколько):\n\n" +
+                f"Вы выбрали: {', '.join(selected_cities)}"
+            )
             await ask_structural_unit_question(query, context)
         else:
             await query.answer("❌ Пожалуйста, выберите хотя бы один город.", show_alert=True)
@@ -293,6 +310,16 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         if selected_reasons:
             user_data['answers']['reasons_not_joining'] = ", ".join(selected_reasons)
             
+            # Показываем финальный результат без кнопок
+            final_reasons = user_data['answers']['reasons_not_joining']
+            if user_data.get('other_reason'):
+                final_reasons += f" ({user_data['other_reason']})"
+            
+            await query.edit_message_text(
+                "Пожалуйста, укажите причину, по которой Вы не готовы рассматривать включение в кадровый резерв:\n\n" +
+                f"Вы выбрали: {final_reasons}"
+            )
+            
             if "Другое (укажите)" in selected_reasons and not user_data.get('other_reason'):
                 await ask_other_reason_question(query, context)
             else:
@@ -307,6 +334,12 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         education = query.data[10:]
         user_data['answers']['education'] = education
         
+        # Показываем выбранный ответ без кнопок
+        await query.edit_message_text(
+            "Ваше образование:\n\n" +
+            f"Вы выбрали: {education}"
+        )
+        
         if education == "Обучаюсь":
             await ask_education_institution_question(query, context)
         else:
@@ -316,12 +349,26 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data.startswith("age_"):
         age = query.data[4:]
         user_data['answers']['age'] = age
+        
+        # Показываем выбранный ответ без кнопок
+        await query.edit_message_text(
+            "Ваш возраст:\n\n" +
+            f"Вы выбрали: {age}"
+        )
+        
         await ask_fio_question(query, context)
     
     # Текущий город
     elif query.data.startswith("current_city_"):
         city = query.data[13:]
         user_data['answers']['current_city'] = city
+        
+        # Показываем выбранный ответ без кнопок
+        await query.edit_message_text(
+            "ПП/ТФ, в котором вы работаете:\n\n" +
+            f"Вы выбрали: {city}"
+        )
+        
         await ask_current_position_question(query, context)
 
 # Функции вопросов
@@ -642,7 +689,8 @@ async def finish_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     result_message = "✅ Спасибо за участие в опросе!\n\nВаши ответы сохранены.\n\nОпрос завершен!"
     
-    await update.message.reply_text(result_message, reply_markup=get_back_to_menu_keyboard())
+    # Отправляем сообщение без кнопки главного меню
+    await update.message.reply_text(result_message)
     
     print(f"Ответы пользователя {user_id}:")
     for question_key, answer in answers.items():
