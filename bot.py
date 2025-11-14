@@ -1,4 +1,6 @@
 import os
+import re
+import html
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
@@ -62,6 +64,57 @@ EDUCATION_LEVELS = [
 ]
 
 AGE_GROUPS = ["18-25", "26-30", "31-35", "36-40", "Больше 41"]
+
+def validate_text_length(text: str, max_length: int = 1000) -> tuple[bool, str]:
+    """Проверка длины текста"""
+    if len(text) > max_length:
+        return False, f"❌ Сообщение слишком длинное. Максимум {max_length} символов."
+    return True, ""
+
+def sanitize_text(text: str) -> str:
+    """Очистка текста от потенциально опасных символов и HTML"""
+    # Экранируем HTML-символы
+    sanitized = html.escape(text)
+    
+    # Удаляем потенциально опасные SQL-символы (базовая защита)
+    dangerous_patterns = [
+        r"(\bDROP\b|\bDELETE\b|\bINSERT\b|\bUPDATE\b|\bSELECT\b|\bUNION\b)",  # SQL keywords
+        r"(\-\-|\;|\/\*|\*\/)",  # SQL комментарии и разделители
+        r"(<script|<\/script>|javascript:)",  # XSS
+        r"(\\x[0-9a-fA-F]{2})",  # Hex-последовательности
+    ]
+    
+    for pattern in dangerous_patterns:
+        sanitized = re.sub(pattern, '[removed]', sanitized, flags=re.IGNORECASE)
+    
+    # Ограничиваем длину (на всякий случай)
+    sanitized = sanitized[:1000]
+    
+    return sanitized.strip()
+
+def validate_and_sanitize_text(text: str) -> tuple[bool, str, str]:
+    """
+    Полная валидация и очистка текста
+    Возвращает: (is_valid, error_message, sanitized_text)
+    """
+    # Проверяем длину
+    is_valid_length, length_error = validate_text_length(text)
+    if not is_valid_length:
+        return False, length_error, ""
+    
+    # Проверяем, что текст не состоит только из спецсимволов
+    clean_text = re.sub(r'[^\w\sа-яА-ЯёЁ.,!?;:()\-]', '', text)
+    if not clean_text.strip():
+        return False, "❌ Текст содержит только специальные символы. Пожалуйста, введите осмысленный текст.", ""
+    
+    # Очищаем текст
+    sanitized_text = sanitize_text(text)
+    
+    # Проверяем, что после очистки остался осмысленный текст
+    if len(sanitized_text.strip()) < 2:
+        return False, "❌ Текст слишком короткий или содержит недопустимые символы.", ""
+    
+    return True, "", sanitized_text
 
 # Inline-клавиатуры
 def get_main_menu_keyboard():
@@ -582,53 +635,70 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['answers'] = {}
 
     # Блокируем текстовый ввод для вопросов с inline-кнопками
-    if current_question in [1, 2, 5, 8, 9, "3_alt", "education", "age", "current_city"]:
+    blocked_questions = [1, 2, 5, 8, 9, "3_alt", "education", "age", "current_city"]
+    if current_question in blocked_questions:
         await update.message.reply_text("❌ Пожалуйста, используйте кнопки для ответа на этот вопрос.")
         return
 
-    # Текстовые вопросы
+    # Валидируем и очищаем текст
+    is_valid, error_msg, sanitized_text = validate_and_sanitize_text(user_message)
+    if not is_valid:
+        await update.message.reply_text(error_msg)
+        return
+
+    # Текстовые вопросы - отправляем ответ пользователя
     if current_question == 3:  # Должность
-        context.user_data['answers']['desired_position'] = user_message
+        context.user_data['answers']['desired_position'] = sanitized_text
+        await update.message.reply_text(f"✅ {sanitized_text}")
         await ask_initiatives_question(update, context)
 
     elif current_question == 4:  # Инициативы
-        context.user_data['answers']['development_initiatives'] = user_message
+        context.user_data['answers']['development_initiatives'] = sanitized_text
+        await update.message.reply_text(f"✅ {sanitized_text}")
         await ask_training_question(update, context)
 
     elif current_question == 6:  # Препятствия карьерному росту
-        context.user_data['answers']['career_obstacles'] = user_message
+        context.user_data['answers']['career_obstacles'] = sanitized_text
+        await update.message.reply_text(f"✅ {sanitized_text}")
         await ask_improvements_question(update, context)
 
     elif current_question == 7:  # Предложения по улучшению
-        context.user_data['answers']['improvement_suggestions'] = user_message
+        context.user_data['answers']['improvement_suggestions'] = sanitized_text
+        await update.message.reply_text(f"✅ {sanitized_text}")
         await ask_rotation_question(update, context)
 
     elif current_question == 10:  # Структурное подразделение
-        context.user_data['answers']['structural_unit'] = user_message
+        context.user_data['answers']['structural_unit'] = sanitized_text
+        await update.message.reply_text(f"✅ {sanitized_text}")
         await ask_current_city_question(update, context)
 
     elif current_question == "4_alt":  # Препятствия карьерному росту (альт)
-        context.user_data['answers']['career_obstacles_alt'] = user_message
+        context.user_data['answers']['career_obstacles_alt'] = sanitized_text
+        await update.message.reply_text(f"✅ {sanitized_text}")
         await ask_improvements_alt_question(update, context)
 
     elif current_question == "5_alt":  # Предложения по улучшению (альт)
-        context.user_data['answers']['improvement_suggestions_alt'] = user_message
+        context.user_data['answers']['improvement_suggestions_alt'] = sanitized_text
+        await update.message.reply_text(f"✅ {sanitized_text}")
         await ask_current_city_question(update, context)
 
     elif current_question == "current_position":  # Текущая должность
-        context.user_data['answers']['current_position'] = user_message
+        context.user_data['answers']['current_position'] = sanitized_text
+        await update.message.reply_text(f"✅ {sanitized_text}")
         await ask_education_question(update, context)
 
     elif current_question == "education_institution":  # Учебное заведение
-        context.user_data['answers']['education_institution'] = user_message
+        context.user_data['answers']['education_institution'] = sanitized_text
+        await update.message.reply_text(f"✅ {sanitized_text}")
         await ask_age_question(update, context)
 
     elif current_question == "other_reason":  # Другая причина
-        if user_message.strip():
-            context.user_data['other_reason'] = user_message.strip()
+        if sanitized_text.strip():
+            context.user_data['other_reason'] = sanitized_text
+            await update.message.reply_text(f"✅ {sanitized_text}")
             if "Другое (укажите)" in context.user_data.get('selected_reasons', []):
                 context.user_data['selected_reasons'].remove("Другое (укажите)")
-                context.user_data['selected_reasons'].append(f"Другое: {user_message.strip()}")
+                context.user_data['selected_reasons'].append(f"Другое: {sanitized_text}")
             
             context.user_data['answers']['reasons_not_joining'] = ", ".join(context.user_data['selected_reasons'])
             await ask_career_obstacles_alt_question(update, context)
@@ -636,9 +706,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Пожалуйста, укажите причину:")
 
     elif current_question == "fio":  # ФИО
-        is_valid, result = validate_fio(user_message)
-        if is_valid:
+        is_valid_fio, result = validate_fio(sanitized_text)
+        if is_valid_fio:
             context.user_data['answers']['fio'] = result
+            await update.message.reply_text(f"✅ {result}")
             await finish_survey(update, context)
         else:
             await update.message.reply_text(f"❌ {result}\n\nПожалуйста, укажите корректное ФИО:")
@@ -648,6 +719,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Функция для валидации ФИО
 def validate_fio(fio):
+    """Валидация ФИО с дополнительной защитой"""
+    # Сначала очищаем текст
+    fio = sanitize_text(fio)
     fio = ' '.join(fio.split())
     
     if len(fio) < 5 or len(fio) > 100:
@@ -657,9 +731,21 @@ def validate_fio(fio):
     if len(parts) < 2:
         return False, "Укажите как минимум имя и фамилию"
     
-    for char in fio:
-        if not (char.isalpha() or char in ' -'):
-            return False, "ФИО может содержать только буквы, дефисы и пробелы"
+    # Проверяем, что каждая часть содержит только буквы, дефисы и пробелы
+    for part in parts:
+        if not re.match(r'^[a-zA-Zа-яА-ЯёЁ\-]+$', part):
+            return False, "ФИО может содержать только буквы и дефисы"
+    
+    # Проверяем, что нет подозрительных последовательностей
+    suspicious_patterns = [
+        r".*(\badmin\b|\broot\b|\btest\b).*",
+        r".*(\bselect\b|\binsert\b|\bdelete\b).*",
+        r".*([<>]|javascript:).*",
+    ]
+    
+    for pattern in suspicious_patterns:
+        if re.match(pattern, fio, re.IGNORECASE):
+            return False, "Указано некорректное ФИО"
     
     return True, fio
 
