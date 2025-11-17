@@ -1,7 +1,9 @@
 import os
 import re
 import html
+import urllib3
 import json
+import requests
 from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
@@ -9,6 +11,11 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
+API_USERNAME = os.getenv('API_USERNAME')
+API_PASSWORD = os.getenv('API_PASSWORD')
+
+# Отключаем предупреждения о небезопасном HTTPS
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Приветственное сообщение
 WELCOME_MESSAGE = """*Уважаемые коллеги!* Настоящий опрос проводится среди сотрудников группы компаний ОАО «Савушкин продукт» с целью эффективного планирования карьерного развития, формирования кадрового резерва, а также выявления инициативных и целеустремлённых специалистов, готовых расти и развиваться вместе с компанией, применяя свои знания и навыки на её производственных площадках.
@@ -619,10 +626,95 @@ async def finish_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(json.dumps(survey_data, ensure_ascii=False, indent=2))
     print("========================\n")
     
-    result_message = "✅ Спасибо за участие в опросе!\n\nВаши ответы сохранены.\n\nОпрос завершен!"
+    # Отправляем данные через API
+    success = await send_survey_data(survey_data)
+    
+    if success:
+        result_message = "✅ Спасибо за участие в опросе!\n\nВаши ответы успешно отправлены.\n\nОпрос завершен!"
+    else:
+        result_message = "✅ Спасибо за участие в опросе!\n\nВаши ответы сохранены, но возникла ошибка при отправке.\n\nОпрос завершен!"
+    
     await update.message.reply_text(result_message)
     
     context.user_data.clear()
+
+async def get_bearer_token() -> str:
+    """Получает bearer token для авторизации"""
+    auth_url = "https://edi1.savushkin.com:5050/api/authentication/authenticate"
+    auth_data = {
+        "username": API_USERNAME,
+        "password": API_PASSWORD
+    }
+    
+    try:
+        response = requests.post(
+            auth_url, 
+            json=auth_data, 
+            verify=False,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            token = result.get('uuid', '')
+            if token:
+                print("✅ Токен авторизации получен")
+                return token
+            else:
+                print("❌ Токен не найден в ответе")
+                return ""
+        else:
+            print(f"❌ Ошибка авторизации: {response.status_code}")
+            return ""
+            
+    except Exception as e:
+        print(f"❌ Ошибка при получении токена: {e}")
+        return ""
+
+async def send_survey_data(survey_data: dict) -> bool:
+    """Отправляет данные опроса на сервер"""
+    # Получаем токен авторизации
+    bearer_token = await get_bearer_token()
+    
+    if not bearer_token:
+        print("❌ Не удалось получить токен авторизации")
+        return False
+    
+    survey_url = "https://edi1.savushkin.com:5050/bot/xr/surveys/add"
+    
+    try:
+        headers = {
+            'Authorization': f'Bearer {bearer_token}',
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.post(
+            survey_url, 
+            json=survey_data, 
+            headers=headers,
+            verify=False,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            record_id = result.get('id')
+            message = result.get('message')
+            
+            if record_id:
+                print(f"✅ Данные успешно отправлены. ID записи: {record_id}, Сообщение: {message}")
+            else:
+                print(f"✅ Данные отправлены. Сообщение: {message}")
+                
+            return True
+        else:
+            print(f"❌ Ошибка отправки данных: {response.status_code}")
+            print(f"Ответ сервера: {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Ошибка при отправке данных: {e}")
+        return False
 
 # Обработчик текстовых сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
