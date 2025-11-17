@@ -1,6 +1,8 @@
 import os
 import re
 import html
+import json
+from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
@@ -499,7 +501,7 @@ async def ask_preferred_cities_question(update, context: ContextTypes.DEFAULT_TY
     context.user_data['current_question'] = "preferred_cities"
 
 async def ask_structural_unit_question(update, context: ContextTypes.DEFAULT_TYPE):
-    question = "Укажите структурное подразделение:"
+    question = "Укажите структурное подразделение (для ротации):"
     if hasattr(update, 'message') and update.message:
         await update.message.reply_text(question)
     else:
@@ -599,6 +601,28 @@ async def ask_fio_question(update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.message.reply_text(question)
     
     context.user_data['current_question'] = "fio"
+
+async def finish_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Получаем user_id в зависимости от типа update
+    if update.message:
+        user_id = update.message.from_user.id
+    else:
+        user_id = update.callback_query.from_user.id
+        
+    answers = context.user_data.get('answers', {})
+    
+    # Формируем данные в нужном формате JSON
+    survey_data = format_survey_data(user_id, answers)
+    
+    # Выводим в консоль для проверки
+    print(f"\n=== Результаты опроса ===")
+    print(json.dumps(survey_data, ensure_ascii=False, indent=2))
+    print("========================\n")
+    
+    result_message = "✅ Спасибо за участие в опросе!\n\nВаши ответы сохранены.\n\nОпрос завершен!"
+    await update.message.reply_text(result_message)
+    
+    context.user_data.clear()
 
 # Обработчик текстовых сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -716,21 +740,100 @@ def validate_fio(fio):
     return True, fio
 
 # Завершение опроса
-async def finish_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    answers = context.user_data.get('answers', {})
+def format_survey_data(user_id: int, answers: dict) -> dict:
+    """Форматирует данные опроса в новый JSON формат"""
     
-    result_message = "✅ Спасибо за участие в опросе!\n\nВаши ответы сохранены.\n\nОпрос завершен!"
+    # Словарь с текстами вопросов
+    question_texts = {
+        'want_reserve': 'Хотели бы Вы, чтобы Ваша кандидатура была рассмотрена для включения в кадровый резерв?',
+        'desired_position': 'Какую должность Вы рассматриваете для возможного назначения в рамках кадрового резерва?',
+        'development_initiatives': 'Какие инициативы или программы Вы хотели бы видеть для развития сотрудников?',
+        'ready_training': 'Готовы ли Вы пройти обучение или стажировку для включения в кадровый резерв?',
+        'career_obstacles': 'Что, по Вашему мнению, мешает карьерному росту внутри компании?',
+        'improvement_suggestions': 'Есть ли у Вас предложения по улучшению работы Вашего филиала или компании в целом?',
+        'ready_rotation': 'Готовы ли Вы к ротации или переводу в другое подразделение (филиал)?',
+        'preferred_cities': 'Укажите предпочтительные города для ротации (можно выбрать несколько):',
+        'structural_unit': 'Укажите структурное подразделение для ротации:',
+        'reasons_not_joining': 'Пожалуйста, укажите причину, по которой Вы не готовы рассматривать включение в кадровый резерв:',
+        'career_obstacles_alt': 'Что, по Вашему мнению, мешает карьерному росту внутри компании?',
+        'improvement_suggestions_alt': 'Есть ли у Вас предложения по улучшению работы Вашего филиала или компании в целом?'
+    }
     
-    # Отправляем сообщение без кнопки главного меню
-    await update.message.reply_text(result_message)
+    # Извлекаем данные для блока respondent (camelCase)
+    respondent_data = {
+        "telegramId": user_id,
+        "fullName": clean_answer_text(answers.get('fio', '')),
+        "ageGroup": clean_answer_text(answers.get('age', '')),
+        "position": clean_answer_text(answers.get('current_position', '')),
+        "filial": clean_answer_text(answers.get('current_city', '')),
+        "isEmployee": clean_answer_text(answers.get('is_employee', '')),  # Перенесли вопрос о сотрудничестве
+        "phoneNumber": ""  # Пока не собираем номер телефона
+    }
     
-    print(f"Ответы пользователя {user_id}:")
-    for question_key, answer in answers.items():
-        print(f"{question_key}: {answer}")
-    print("---")
+    # Формируем массив ответов для блока response (исключаем данные respondent)
+    excluded_keys = ['fio', 'age', 'current_position', 'current_city', 'education', 'education_institution', 'is_employee']
     
-    context.user_data.clear()
+    answers_array = []
+    
+    for answer_key, answer_value in answers.items():
+        if answer_key in question_texts and answer_key not in excluded_keys:
+            clean_answer = clean_answer_text(str(answer_value))
+            
+            # Конвертируем questionId в camelCase
+            question_id = to_camel_case(answer_key)
+            
+            answers_array.append({
+                "questionId": question_id,
+                "questionText": question_texts[answer_key],
+                "answerText": clean_answer
+            })
+    
+    # Добавляем вопросы об образовании, если они есть
+    if 'education' in answers:
+        answers_array.append({
+            "questionId": "education",
+            "questionText": "Ваше образование:",
+            "answerText": clean_answer_text(answers['education'])
+        })
+    
+    if 'education_institution' in answers:
+        answers_array.append({
+            "questionId": "educationInstitution", 
+            "questionText": "Укажите учебное заведение, в котором обучаетесь:",
+            "answerText": clean_answer_text(answers['education_institution'])
+        })
+    
+    # Сортируем ответы в логическом порядке вопросов
+    question_order = [
+        'want_reserve', 'desired_position', 'development_initiatives',
+        'ready_training', 'career_obstacles', 'improvement_suggestions', 'ready_rotation',
+        'preferred_cities', 'structural_unit', 'reasons_not_joining', 'career_obstacles_alt',
+        'improvement_suggestions_alt', 'education', 'education_institution'
+    ]
+    
+    sorted_answers = sorted(answers_array, 
+                          key=lambda x: question_order.index(
+                              next(key for key in question_order if to_camel_case(key) == x['questionId'])
+                          ) if any(to_camel_case(key) == x['questionId'] for key in question_order) else len(question_order))
+    
+    return {
+        "name": "Хочу расти!",
+        "respondent": respondent_data,
+        "response": {
+            "answers": sorted_answers
+        }
+    }
+
+def to_camel_case(snake_str):
+    """Конвертирует snake_case в camelCase"""
+    components = snake_str.split('_')
+    return components[0] + ''.join(x.title() for x in components[1:])
+
+def clean_answer_text(answer: str) -> str:
+    """Очищает ответ от эмодзи и лишних символов"""
+    # Убираем эмодзи и специальные символы в начале ответа
+    cleaned = re.sub(r'^[✅❌👤\s]*', '', answer)
+    return cleaned
 
 # Обработчик ошибок
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
