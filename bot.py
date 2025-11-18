@@ -72,7 +72,7 @@ EDUCATION_LEVELS = [
     "Обучаюсь"
 ]
 
-AGE_GROUPS = ["18-25", "26-30", "31-35", "36-40", "Больше 41"]
+AGE_GROUPS = ["18-25", "26-30", "31-35", "36-40", "Больше 40"]
 
 def validate_text_length(text: str, max_length: int = 1000) -> tuple[bool, str]:
     """Проверка длины текста"""
@@ -277,11 +277,9 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         if query.data == "yes":
             await ask_want_reserve_question(query, context)
         else:
-            await query.message.reply_text(
-                "К сожалению, данный опрос только для сотрудников компании.",
-                reply_markup=get_back_to_menu_keyboard()
-            )
-            user_data.clear()
+            user_data['answers']['is_employee'] = "❌ Нет"
+            await query.message.reply_text("К сожалению, данный опрос только для сотрудников компании.")
+            await finish_survey(query, context)
     
     # Вопрос 2: Кадровый резерв
     elif query.data in ["yes_want_reserve", "no_want_reserve"]:
@@ -610,12 +608,13 @@ async def ask_fio_question(update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['current_question'] = "fio"
 
 async def finish_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Получаем user_id в зависимости от типа update
     if update.message:
         user_id = update.message.from_user.id
+        message = update.message
     else:
         user_id = update.callback_query.from_user.id
-        
+        message = update.callback_query.message
+    
     answers = context.user_data.get('answers', {})
     
     # Формируем данные в нужном формате JSON
@@ -634,7 +633,7 @@ async def finish_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         result_message = "✅ Спасибо за участие в опросе!\n\nВаши ответы сохранены, но возникла ошибка при отправке.\n\nОпрос завершен!"
     
-    await update.message.reply_text(result_message)
+    await message.reply_text(result_message)
     
     context.user_data.clear()
 
@@ -837,7 +836,7 @@ def format_survey_data(user_id: int, answers: dict) -> dict:
     
     # Словарь с текстами вопросов
     question_texts = {
-        'want_reserve': 'Хотели бы Вы, чтобы Ваша кандидатура была рассмотрена для включения в кадровый резерв?',
+        'want_reserve': 'Хотели бы Вы, чтобы Ваша кандидатура была рассмотрена для включения в кадрового резерва?',
         'desired_position': 'Какую должность Вы рассматриваете для возможного назначения в рамках кадрового резерва?',
         'development_initiatives': 'Какие инициативы или программы Вы хотели бы видеть для развития сотрудников?',
         'ready_training': 'Готовы ли Вы пройти обучение или стажировку для включения в кадровый резерв?',
@@ -846,9 +845,7 @@ def format_survey_data(user_id: int, answers: dict) -> dict:
         'ready_rotation': 'Готовы ли Вы к ротации или переводу в другое подразделение (филиал)?',
         'preferred_cities': 'Укажите предпочтительные города для ротации (можно выбрать несколько):',
         'structural_unit': 'Укажите структурное подразделение для ротации:',
-        'reasons_not_joining': 'Пожалуйста, укажите причину, по которой Вы не готовы рассматривать включение в кадровый резерв:',
-        'career_obstacles_alt': 'Что, по Вашему мнению, мешает карьерному росту внутри компании?',
-        'improvement_suggestions_alt': 'Есть ли у Вас предложения по улучшению работы Вашего филиала или компании в целом?'
+        'reasons_not_joining': 'Пожалуйста, укажите причину, по которой Вы не готовы рассматривать включение в кадровый резерв:'
     }
     
     # Извлекаем данные для блока respondent (camelCase)
@@ -858,19 +855,32 @@ def format_survey_data(user_id: int, answers: dict) -> dict:
         "ageGroup": clean_answer_text(answers.get('age', '')),
         "position": clean_answer_text(answers.get('current_position', '')),
         "filial": clean_answer_text(answers.get('current_city', '')),
-        "isEmployee": clean_answer_text(answers.get('is_employee', '')),  # Перенесли вопрос о сотрудничестве
-        "phoneNumber": ""  # Пока не собираем номер телефона
+        "isEmployee": clean_answer_text(answers.get('is_employee', '')),
+        "phoneNumber": ""
     }
     
-    # Формируем массив ответов для блока response (исключаем данные respondent)
+    # Формируем массив ответов для блока response
     excluded_keys = ['fio', 'age', 'current_position', 'current_city', 'education', 'education_institution', 'is_employee']
     
     answers_array = []
     
     for answer_key, answer_value in answers.items():
-        if answer_key in question_texts and answer_key not in excluded_keys:
-            clean_answer = clean_answer_text(str(answer_value))
-            
+        clean_answer = clean_answer_text(str(answer_value))
+        
+        # Обрабатываем альтернативные вопросы как основные
+        if answer_key == 'career_obstacles_alt':
+            answers_array.append({
+                "questionId": "careerObstacles",
+                "questionText": "Что, по Вашему мнению, мешает карьерному росту внутри компании?",
+                "answerText": clean_answer
+            })
+        elif answer_key == 'improvement_suggestions_alt':
+            answers_array.append({
+                "questionId": "improvementSuggestions",
+                "questionText": "Есть ли у Вас предложения по улучшению работы Вашего филиала или компании в целом?",
+                "answerText": clean_answer
+            })
+        elif answer_key in question_texts and answer_key not in excluded_keys:
             # Конвертируем questionId в camelCase
             question_id = to_camel_case(answer_key)
             
@@ -899,8 +909,7 @@ def format_survey_data(user_id: int, answers: dict) -> dict:
     question_order = [
         'want_reserve', 'desired_position', 'development_initiatives',
         'ready_training', 'career_obstacles', 'improvement_suggestions', 'ready_rotation',
-        'preferred_cities', 'structural_unit', 'reasons_not_joining', 'career_obstacles_alt',
-        'improvement_suggestions_alt', 'education', 'education_institution'
+        'preferred_cities', 'structural_unit', 'reasons_not_joining', 'education', 'education_institution'
     ]
     
     sorted_answers = sorted(answers_array, 
