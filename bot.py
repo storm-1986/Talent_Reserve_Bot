@@ -1,9 +1,9 @@
 import os
 import re
-import html
 import urllib3
 import json
 import requests
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
@@ -13,6 +13,39 @@ load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 API_USERNAME = os.getenv('API_USERNAME')
 API_PASSWORD = os.getenv('API_PASSWORD')
+
+# Настройка логирования - УБИРАЕМ ЛИШНИЕ ЛОГИ
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
+logging.getLogger('telegram').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+
+# Настройка нашего логгера
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Создаем форматтер
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+# Создаем папку logs если ее нет
+logs_dir = 'logs'
+os.makedirs(logs_dir, exist_ok=True)
+
+# Файловый обработчик
+log_filename = f'survey_bot_{datetime.now().strftime("%Y%m%d")}.log'
+log_filepath = os.path.join(logs_dir, log_filename)
+file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(formatter)
+
+# Консольный обработчик (только для нашего логгера)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(formatter)
+
+# Добавляем обработчики только к нашему логгеру
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 # Отключаем предупреждения о небезопасном HTTPS
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -439,6 +472,11 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data == "start_survey":
         user_data.clear()
         user_data['answers'] = {}
+        
+        # ДОБАВЛЯЕМ ЛОГ О НАЧАЛЕ ОПРОСА
+        user_id = query.from_user.id
+        logger.info(f"Пользователь {user_id} начал опрос")
+        
         # Редактируем сообщение с главным меню, убирая кнопки
         await query.edit_message_text(WELCOME_MESSAGE, parse_mode='Markdown')
         
@@ -448,9 +486,14 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data == "consent_continue":
         # Сохраняем ответ о согласии
         user_data['answers']['isAgree'] = "✅ Да"
+
+        # Логируем ответ
+        logger.info(f"Пользователь {query.from_user.id}: isAgree = Да")
         
         # Оставляем текст согласия без кнопки (редактируем)
         await query.edit_message_text(QUESTIONS['isAgree']['text'])
+        
+        # Отправляем ответ пользователя новым сообщением
         await query.message.reply_text("✅ Да")
         
         # Переходим к первому вопросу
@@ -468,6 +511,10 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(QUESTIONS['isEmployee']['text'])
         await query.message.reply_text("✅ Да" if query.data == "yes" else "❌ Нет")
         
+        # Логируем ответ
+        answer_text = "Да" if query.data == "yes" else "Нет"
+        logger.info(f"Пользователь {query.from_user.id}: isEmployee = {answer_text}")
+        
         if query.data == "yes":
             await ask_question(query, context, 'wantReserve')
         else:
@@ -481,6 +528,10 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(QUESTIONS['wantReserve']['text'])
         await query.message.reply_text("✅ Да" if query.data == "yes_want_reserve" else "❌ Нет")
         
+        # Логируем ответ
+        answer_text = "Да" if query.data == "yes_want_reserve" else "Нет"
+        logger.info(f"Пользователь {query.from_user.id}: wantReserve = {answer_text}")
+        
         if query.data == "yes_want_reserve":
             user_data['branch'] = 'yes'
             await ask_question(query, context, 'desiredPosition')
@@ -493,6 +544,11 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_data['answers']['readyTraining'] = "✅ Да" if query.data == "yes_ready_training" else "❌ Нет"
         await query.edit_message_text(QUESTIONS['readyTraining']['text'])
         await query.message.reply_text("✅ Да" if query.data == "yes_ready_training" else "❌ Нет")
+        
+        # Логируем ответ
+        answer_text = "Да" if query.data == "yes_ready_training" else "Нет"
+        logger.info(f"Пользователь {query.from_user.id}: readyTraining = {answer_text}")
+        
         await ask_question(query, context, 'careerObstacles')
     
     # Вопрос 8: Ротация
@@ -500,6 +556,10 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_data['answers']['readyRotation'] = "✅ Да" if query.data == "yes_ready_rotation" else "❌ Нет"
         await query.edit_message_text(QUESTIONS['readyRotation']['text'])
         await query.message.reply_text("✅ Да" if query.data == "yes_ready_rotation" else "❌ Нет")
+        
+        # Логируем ответ
+        answer_text = "Да" if query.data == "yes_ready_rotation" else "Нет"
+        logger.info(f"Пользователь {query.from_user.id}: readyRotation = {answer_text}")
         
         if query.data == "yes_ready_rotation":
             await ask_question(query, context, 'preferredCities')
@@ -517,11 +577,15 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
             selected_cities.append(city)
         
         user_data['selected_cities'] = selected_cities
+        
+        # Логируем выбор города
+        logger.info(f"Пользователь {query.from_user.id}: выбрал город {city}, текущий выбор: {selected_cities}")
+        
         await query.edit_message_text(
             QUESTIONS['preferredCities']['text'] + "\n\nВыбрано: " + ", ".join(selected_cities) if selected_cities else "Ничего не выбрано",
             reply_markup=get_cities_keyboard(selected_cities)
         )
-    
+
     elif query.data == "finish_cities":
         selected_cities = user_data.get('selected_cities', [])
         if selected_cities:
@@ -529,6 +593,10 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.edit_message_text(QUESTIONS['preferredCities']['text'])
             cities_text = "\n".join([f"✅ {city}" for city in selected_cities])
             await query.message.reply_text(cities_text)
+            
+            # Логируем финальный выбор городов
+            logger.info(f"Пользователь {query.from_user.id}: preferredCities = {selected_cities}")
+            
             await ask_question(query, context, 'structuralUnit')
         else:
             await query.answer("❌ Пожалуйста, выберите хотя бы один город.", show_alert=True)
@@ -549,13 +617,16 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
             
             user_data['selected_reasons'] = selected_reasons
             
+            # Логируем выбор причины
+            logger.info(f"Пользователь {query.from_user.id}: выбрал причину '{reason_text}', текущий выбор: {selected_reasons}")
+            
             await query.edit_message_text(
                 QUESTIONS['reasonsNotJoining']['text'] + "\n\nВыбрано: " + ", ".join(selected_reasons) if selected_reasons else "Ничего не выбрано",
                 reply_markup=get_reasons_keyboard(selected_reasons)
             )
         except (ValueError, IndexError):
             await query.answer("❌ Ошибка обработки", show_alert=True)
-    
+
     elif query.data == "finish_reasons":
         selected_reasons = user_data.get('selected_reasons', [])
         if selected_reasons:
@@ -569,6 +640,11 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
                 user_data['answers']['reasonsNotJoining'] += f" ({user_data['other_reason']})"
             
             await query.message.reply_text(reasons_text)
+            
+            # Логируем финальный выбор причин
+            logger.info(f"Пользователь {query.from_user.id}: reasonsNotJoining = {selected_reasons}")
+            if user_data.get('other_reason'):
+                logger.info(f"Пользователь {query.from_user.id}: другая причина = {user_data['other_reason']}")
             
             if "Другое (укажите)" in selected_reasons and not user_data.get('other_reason'):
                 await ask_question(query, context, 'otherReason')
@@ -584,6 +660,9 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(QUESTIONS['education']['text'])
         await query.message.reply_text(f"✅ {education}")
         
+        # Логируем ответ
+        logger.info(f"Пользователь {query.from_user.id}: education = {education}")
+        
         if education == "Обучаюсь":
             await ask_question(query, context, 'educationInstitution')
         else:
@@ -595,6 +674,10 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_data['answers']['age'] = age
         await query.edit_message_text(QUESTIONS['age']['text'])
         await query.message.reply_text(f"✅ {age}")
+        
+        # Логируем ответ
+        logger.info(f"Пользователь {query.from_user.id}: age = {age}")
+        
         await ask_question(query, context, 'fio')
     
     # Текущий город
@@ -603,12 +686,17 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_data['answers']['currentCity'] = city
         await query.edit_message_text(QUESTIONS['currentCity']['text'])
         await query.message.reply_text(f"✅ {city}")
+        
+        # Логируем ответ
+        logger.info(f"Пользователь {query.from_user.id}: currentCity = {city}")
+        
         await ask_question(query, context, 'currentPosition')
 
 # Обработчик текстовых сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
     current_question = context.user_data.get('current_question', 0)
+    user_id = update.message.from_user.id
     
     if 'answers' not in context.user_data:
         context.user_data['answers'] = {}
@@ -627,6 +715,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Сохраняем ответ
     context.user_data['answers'][current_question] = sanitized_text
     await update.message.reply_text(f"✅ {sanitized_text}")
+    
+    # Логируем текстовый ответ
+    logger.info(f"Пользователь {user_id}: {current_question} = {sanitized_text}")
     
     # Определяем следующий вопрос
     next_question = get_next_question(current_question, context)
@@ -666,9 +757,9 @@ async def finish_survey(update: Update, context: ContextTypes.DEFAULT_TYPE, show
     
     survey_data = format_survey_data(user_id, answers)
     
-    print(f"\n=== Результаты опроса ===")
-    print(json.dumps(survey_data, ensure_ascii=False, indent=2))
-    print("========================\n")
+    # Логируем полные результаты в файл (ТОЛЬКО В ФАЙЛ, НЕ В КОНСОЛЬ)
+    logger.info(f"Результаты опроса пользователя {user_id}:")
+    logger.info(json.dumps(survey_data, ensure_ascii=False, indent=2))
     
     success = await send_survey_data(survey_data)
     
@@ -747,6 +838,7 @@ def clean_answer_text(answer: str) -> str:
 
 # API функции
 async def get_bearer_token() -> str:
+    """Получает bearer token для авторизации"""
     auth_url = "https://edi1.savushkin.com:5050/api/authentication/authenticate"
     auth_data = {
         "username": API_USERNAME,
@@ -765,23 +857,29 @@ async def get_bearer_token() -> str:
             result = response.json()
             token = result.get('uuid', '')
             if token:
+                logger.info("Токен авторизации получен успешно")
                 print("✅ Токен авторизации получен")
                 return token
             else:
+                logger.error("Токен не найден в ответе авторизации")
                 print("❌ Токен не найден в ответе")
                 return ""
         else:
+            logger.error(f"Ошибка авторизации: {response.status_code} - {response.text}")
             print(f"❌ Ошибка авторизации: {response.status_code}")
             return ""
             
     except Exception as e:
+        logger.error(f"Ошибка при получении токена: {e}")
         print(f"❌ Ошибка при получении токена: {e}")
         return ""
 
 async def send_survey_data(survey_data: dict) -> bool:
+    """Отправляет данные опроса на сервер"""
     bearer_token = await get_bearer_token()
     
     if not bearer_token:
+        logger.error("Не удалось получить токен авторизации")
         print("❌ Не удалось получить токен авторизации")
         return False
     
@@ -807,27 +905,41 @@ async def send_survey_data(survey_data: dict) -> bool:
             message = result.get('message')
             
             if record_id:
-                print(f"✅ Данные успешно отправлены. ID записи: {record_id}, Сообщение: {message}")
+                logger.info(f"Данные успешно отправлены. ID записи: {record_id}, Сообщение: {message}")
+                print(f"✅ Данные успешно отправлены. ID записи: {record_id}")
             else:
-                print(f"✅ Данные отправлены. Сообщение: {message}")
+                logger.info(f"Данные отправлены. Сообщение: {message}")
+                print(f"✅ Данные отправлены")
                 
             return True
         else:
+            logger.error(f"Ошибка отправки данных: {response.status_code} - {response.text}")
             print(f"❌ Ошибка отправки данных: {response.status_code}")
-            print(f"Ответ сервера: {response.text}")
             return False
             
     except Exception as e:
+        logger.error(f"Ошибка при отправке данных: {e}")
         print(f"❌ Ошибка при отправке данных: {e}")
         return False
 
 # Обработчик ошибок
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"Произошла ошибка: {context.error}")
+    error_msg = f"Произошла ошибка: {context.error}"
+    logger.error(error_msg)
+    print(error_msg)
 
 # Главная функция
 def main():
+    # Создаем папку logs если ее нет
+    os.makedirs('logs', exist_ok=True)
+
     print("Запускаю бота опроса...")
+    
+    # Дополнительно настраиваем логирование для библиотеки telegram
+    logging.getLogger('telegram.ext.updater').setLevel(logging.WARNING)
+    logging.getLogger('telegram.ext.dispatcher').setLevel(logging.WARNING)
+    logging.getLogger('telegram.ext.jobqueue').setLevel(logging.WARNING)
+    
     application = Application.builder().token(BOT_TOKEN).build()
     
     application.add_handler(CommandHandler("start", start_command))
