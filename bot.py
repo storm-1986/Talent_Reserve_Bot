@@ -165,9 +165,7 @@ def validate_text_length(text: str, max_length: int = 1000) -> tuple[bool, str]:
     return True, ""
 
 def sanitize_text(text: str) -> str:
-    """Очистка текста от потенциально опасных символов и HTML"""
-    sanitized = html.escape(text)
-    
+
     dangerous_patterns = [
         r"(\bDROP\b|\bDELETE\b|\bINSERT\b|\bUPDATE\b|\bSELECT\b|\bUNION\b)",
         r"(\-\-|\;|\/\*|\*\/)",
@@ -177,6 +175,7 @@ def sanitize_text(text: str) -> str:
         r"([<>])",
     ]
     
+    sanitized = text
     for pattern in dangerous_patterns:
         sanitized = re.sub(pattern, '[removed]', sanitized, flags=re.IGNORECASE)
     
