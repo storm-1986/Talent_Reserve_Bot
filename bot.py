@@ -473,7 +473,9 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_data.clear()
         user_data['answers'] = {}
         
-        # ДОБАВЛЯЕМ ЛОГ О НАЧАЛЕ ОПРОСА
+        # Сохраняем правильного пользователя
+        user_data['telegram_user'] = query.from_user  # СОХРАНЯЕМ ПОЛЬЗОВАТЕЛЯ
+        
         user_id = query.from_user.id
         logger.info(f"Пользователь {user_id} начал опрос")
         
@@ -694,6 +696,8 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # Обработчик текстовых сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if 'telegram_user' not in context.user_data:
+        context.user_data['telegram_user'] = update.message.from_user
     user_message = update.message.text
     current_question = context.user_data.get('current_question', 0)
     user_id = update.message.from_user.id
@@ -746,19 +750,32 @@ def validate_fio(fio):
 
 # Завершение опроса
 async def finish_survey(update: Update, context: ContextTypes.DEFAULT_TYPE, show_completion_message: bool = True):
-    if update.message:
-        user_id = update.message.from_user.id
-        message = update.message
+    user_data = context.user_data
+    
+    # Берем пользователя из сохраненных данных
+    user = user_data.get('telegram_user')
+    if not user:
+        # Если по какой-то причине нет сохраненного пользователя, пробуем получить из update
+        if update.message:
+            user = update.message.from_user
+            message = update.message
+        else:
+            query = update.callback_query
+            user = query.from_user
+            message = query.message
     else:
-        user_id = update.callback_query.from_user.id
-        message = update.callback_query.message
+        # Определяем message для отправки ответа
+        if update.message:
+            message = update.message
+        else:
+            message = update.callback_query.message
     
-    answers = context.user_data.get('answers', {})
+    answers = user_data.get('answers', {})
     
-    survey_data = format_survey_data(user_id, answers)
+    survey_data = format_survey_data(user, answers)
     
-    # Логируем полные результаты в файл (ТОЛЬКО В ФАЙЛ, НЕ В КОНСОЛЬ)
-    logger.info(f"Результаты опроса пользователя {user_id}:")
+    # Логируем полные результаты в файл
+    logger.info(f"Результаты опроса пользователя {user.id}:")
     logger.info(json.dumps(survey_data, ensure_ascii=False, indent=2))
     
     success = await send_survey_data(survey_data)
@@ -773,16 +790,27 @@ async def finish_survey(update: Update, context: ContextTypes.DEFAULT_TYPE, show
     
     context.user_data.clear()
 
-def format_survey_data(user_id: int, answers: dict) -> dict:
+def format_survey_data(user, answers: dict) -> dict:
+    telegram_user = {
+        "id": user.id,
+        "firstName": user.first_name or "",
+        "lastName": user.last_name or "",
+        "userName": user.username or "",
+        "languageCode": user.language_code or "",
+        "isBot": user.is_bot,
+        "isPremium": bool(getattr(user, 'is_premium', False))
+    }
+    
     respondent_data = {
-        "telegramId": user_id,
+        "telegramId": user.id,
         "fullName": clean_answer_text(answers.get('fio', '')),
         "ageGroup": clean_answer_text(answers.get('age', '')),
         "position": clean_answer_text(answers.get('currentPosition', '')),
         "filial": clean_answer_text(answers.get('currentCity', '')),
         "isEmployee": clean_answer_text(answers.get('isEmployee', '')),
-        "isAgree": clean_answer_text(answers.get('isAgree', '')),  # Добавляем согласие
-        "phoneNumber": ""
+        "isAgree": clean_answer_text(answers.get('isAgree', '')),
+        "phoneNumber": "",
+        "telegramUser": telegram_user
     }
     
     # Исключаем isAgree из блока response, так как оно уже в respondent
