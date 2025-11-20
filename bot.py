@@ -104,7 +104,7 @@ REASONS_NO_RESERVE = [
 
 EDUCATION_LEVELS = [
     "Профессионально-техническое",
-    "Средне специальное", 
+    "Среднее специальное", 
     "Высшее",
     "Обучаюсь"
 ]
@@ -129,10 +129,6 @@ QUESTIONS = {
         'text': "Какую должность Вы рассматриваете для возможного назначения в рамках кадрового резерва?",
         'type': 'text'
     },
-    'developmentInitiatives': {
-        'text': "Какие инициативы или программы Вы хотели бы видеть для развития сотрудников?",
-        'type': 'text'
-    },
     'readyTraining': {
         'text': "Готовы ли Вы пройти обучение или стажировку для включения в кадровый резерв?",
         'type': 'yes_no_custom'
@@ -154,7 +150,7 @@ QUESTIONS = {
         'type': 'cities'
     },
     'structuralUnit': {
-        'text': "Укажите структурное подразделение для ротации:",
+        'text': "Укажите структурное подразделение для ротации (логистика, продажи, бухгалтерии, производство и т.п.):",
         'type': 'text'
     },
     'reasonsNotJoining': {
@@ -180,6 +176,10 @@ QUESTIONS = {
     'age': {
         'text': "Укажите Ваш возраст:",
         'type': 'age'
+    },
+    'tabNumber': {
+        'text': "Укажите Ваш табельный номер:",
+        'type': 'tab_number'
     },
     'fio': {
         'text': "Укажите свои имя и фамилию:\n(в формате: \"Имя Фамилия\")",
@@ -421,8 +421,7 @@ def get_next_question(current_question: str, context: ContextTypes.DEFAULT_TYPE)
     branch = user_data.get('branch')
     
     question_flow = {
-        'desiredPosition': 'developmentInitiatives',
-        'developmentInitiatives': 'readyTraining', 
+        'desiredPosition': 'readyTraining',
         'readyTraining': 'careerObstacles',
         'careerObstacles': 'improvementSuggestions',
         'improvementSuggestions': 'readyRotation',
@@ -430,7 +429,8 @@ def get_next_question(current_question: str, context: ContextTypes.DEFAULT_TYPE)
         'currentCity': 'currentPosition',
         'currentPosition': 'education',
         'educationInstitution': 'age',
-        'age': 'fio',
+        'age': 'tabNumber',
+        'tabNumber': 'fio',
         'fio': None
     }
     
@@ -680,7 +680,7 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Логируем ответ
         logger.info(f"Пользователь {query.from_user.id}: age = {age}")
         
-        await ask_question(query, context, 'fio')
+        await ask_question(query, context, 'tabNumber')
     
     # Текущий город
     elif query.data.startswith("current_city_"):
@@ -696,6 +696,7 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # Обработчик текстовых сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Сохраняем пользователя если еще не сохранен
     if 'telegram_user' not in context.user_data:
         context.user_data['telegram_user'] = update.message.from_user
     user_message = update.message.text
@@ -711,6 +712,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Пожалуйста, используйте кнопки для ответа на этот вопрос.")
         return
 
+    # ОСОБАЯ ОБРАБОТКА ДЛЯ ТАБЕЛЬНОГО НОМЕРА
+    if current_question == 'tabNumber':
+        is_valid, error_msg = validate_tab_number(user_message)
+        if not is_valid:
+            await update.message.reply_text(error_msg)
+            return
+        
+        # Сохраняем очищенный номер
+        context.user_data['answers'][current_question] = error_msg  # error_msg содержит очищенный номер
+        await update.message.reply_text(f"✅ {error_msg}")
+        
+        # Логируем ответ
+        logger.info(f"Пользователь {user_id}: {current_question} = {error_msg}")
+        
+        # Переходим к следующему вопросу
+        next_question = get_next_question(current_question, context)
+        if next_question:
+            await ask_question(update, context, next_question)
+        else:
+            await finish_survey(update, context)
+        return
+
+    # Обычная обработка для других текстовых вопросов
     is_valid, error_msg, sanitized_text = validate_and_sanitize_text(user_message)
     if not is_valid:
         await update.message.reply_text(error_msg)
@@ -729,6 +753,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await ask_question(update, context, next_question)
     else:
         await finish_survey(update, context)
+
+def validate_tab_number(tab_number: str) -> tuple[bool, str]:
+    """Проверка табельного номера"""
+    # Убираем пробелы и другие символы
+    clean_number = re.sub(r'\s+', '', tab_number)
+    
+    # Проверяем что только цифры
+    if not clean_number.isdigit():
+        return False, "❌ Табельный номер должен содержать только цифры"
+    
+    # Проверяем длину (не более 9 цифр)
+    if len(clean_number) > 9:
+        return False, "❌ Табельный номер не может содержать более 9 цифр"
+    
+    # Проверяем что не пустой
+    if len(clean_number) == 0:
+        return False, "❌ Табельный номер не может быть пустым"
+    
+    return True, clean_number
 
 # Функция для валидации ФИО
 def validate_fio(fio):
@@ -802,7 +845,6 @@ def format_survey_data(user, answers: dict) -> dict:
     }
     
     respondent_data = {
-        "telegramId": user.id,
         "fullName": clean_answer_text(answers.get('fio', '')),
         "ageGroup": clean_answer_text(answers.get('age', '')),
         "position": clean_answer_text(answers.get('currentPosition', '')),
@@ -810,11 +852,13 @@ def format_survey_data(user, answers: dict) -> dict:
         "isEmployee": clean_answer_text(answers.get('isEmployee', '')),
         "isAgree": clean_answer_text(answers.get('isAgree', '')),
         "phoneNumber": "",
+        "tabNumber": answers.get('tabNumber', ''),  # ДОБАВЛЕНО: табельный номер
         "telegramUser": telegram_user
     }
     
-    # Исключаем isAgree из блока response, так как оно уже в respondent
-    excluded_keys = ['fio', 'age', 'currentPosition', 'currentCity', 'education', 'educationInstitution', 'isEmployee', 'isAgree']
+    # Исключаем isAgree и tabNumber из блока response
+    excluded_keys = ['fio', 'age', 'currentPosition', 'currentCity', 'education', 
+                    'educationInstitution', 'isEmployee', 'isAgree', 'tabNumber']
     
     answers_array = []
     
@@ -843,8 +887,8 @@ def format_survey_data(user, answers: dict) -> dict:
         })
     
     question_order = [
-        'wantReserve', 'desiredPosition', 'developmentInitiatives',
-        'readyTraining', 'careerObstacles', 'improvementSuggestions', 'readyRotation',
+        'wantReserve', 'desiredPosition', 'readyTraining',
+        'careerObstacles', 'improvementSuggestions', 'readyRotation',
         'preferredCities', 'structuralUnit', 'reasonsNotJoining', 'education', 'educationInstitution'
     ]
     
