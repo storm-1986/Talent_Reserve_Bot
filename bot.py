@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import urllib3
@@ -182,7 +183,7 @@ QUESTIONS = {
         'type': 'tab_number'
     },
     'fio': {
-        'text': "Укажите свои имя и фамилию:\n(в формате: \"Имя Фамилия\")",
+        'text': "Укажите свои имя и фамилию:",
         'type': 'text'
     },
     'otherReason': {
@@ -1025,7 +1026,23 @@ def main():
     application.add_error_handler(error)
     
     print("Бот запущен! Нажмите Ctrl+C для остановки.")
-    application.run_polling()
+    
+    # ИСПРАВЛЕНИЕ ДЛЯ PYTHON 3.14 - вариант 2
+    try:
+        application.run_polling()
+    except RuntimeError as e:
+        if "no current event loop" in str(e):
+            # Создаем новую event loop для этого потока
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(application.run_polling())
+            except KeyboardInterrupt:
+                print("\nБот остановлен.")
+            finally:
+                loop.close()
+        else:
+            raise e
 
 if __name__ == "__main__":
     main()
